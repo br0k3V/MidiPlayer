@@ -361,7 +361,7 @@ do -- Components.App
 		end
 		
 		
-		function App:Init()
+		function App.Init()
 		
 			FastDraggable(gui.Frame, gui.Frame.Handle)
 			gui.Parent = CoreGui
@@ -6085,4 +6085,4 @@ if (not isfolder("midi")) then
 	makefolder("midi")
 end
 
-App:Init()
+App.Init()
