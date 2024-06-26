@@ -5673,11 +5673,395 @@ do -- MidiPlayer.Input
 	end
 	fake_module_scripts[script] = module_script
 end
+do -- MidiPlayer.FastDraggable
+	local script = Instance.new('ModuleScript', MidiPlayer)
+	script.Name = "FastDraggable"
+	local function module_script()
+		-- https://devforum.roblox.com/t/draggable-property-is-hidden-on-gui-objects/107689/5
+		
+		local UserInputService = game:GetService("UserInputService")
+		
+		
+		local function FastDraggable(gui, handle)
+		
+			handle = handle or gui
+		
+			local dragging
+			local dragInput
+			local dragStart
+			local startPos
+		
+			local function update(input)
+				local delta = input.Position - dragStart
+				gui.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+			end
+		
+			handle.InputBegan:Connect(function(input)
+				if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+					dragging = true
+					dragStart = input.Position
+					startPos = gui.Position
+		
+					input.Changed:Connect(function()
+						if input.UserInputState == Enum.UserInputState.End then
+							dragging = false
+						end
+					end)
+				end
+			end)
+		
+			handle.InputChanged:Connect(function(input)
+				if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+					dragInput = input
+				end
+			end)
+		
+			UserInputService.InputChanged:Connect(function(input)
+				if input == dragInput and dragging then
+					update(input)
+				end
+			end)
+		
+		end
+		
+		
+		return FastDraggable
+	end
+	fake_module_scripts[script] = module_script
+end
+do -- MidiPlayer.TaskScheduler
+	local script = Instance.new('ModuleScript', MidiPlayer)
+	script.Name = "TaskScheduler"
+	local function module_script()
+		-- Author: EchoReaper
+		-- Roblox Link: https://www.roblox.com/Task-Scheduler-item?id=348019935
+		-- Publically released January 25, 2016
+		
+		-- Changes made from EchoReaper's version:
+		-- GetCurrentFPS() method removed
+		-- FPS is only tracked when the 'Loop' function is running for performance reasons
+		-- Styled code in consistency with the rest of the AeroGameFramework codebase
+		
+		--[[
+			
+			local scheduler = TaskScheduler:CreateScheduler(targetedMinimumFPS)
+			
+			scheduler:QueueTask(function)
+			scheduler:Pause()
+			scheduler:Resume()
+			scheduler:Destroy()
+			
+		--]]
+		
+		
+		
+		
+		local TaskScheduler = {}
+		
+		local lastIteration
+		local frameUpdateTable = {}
+		
+		local runService = game:GetService("RunService")
+		
+		--[[
+			param targetFps  Task scheduler won't run a task if it'd make the FPS drop below this amount
+							 (WARNING) this only holds true if it is used properly. If you try to complete 10 union operations
+							 at once in a single task then of course your FPS is going to drop -- queue the union operations
+							 up one at a time so the task scheduler can do its job.
+							
+							
+			returns scheduler
+				method Pause      Pauses the scheduler so it won't run tasks. Tasks may still be added while the scheduler is
+								  paused. They just won't be touched until it's resumed. Performance efficient -- disables
+								  execution loop entirely until scheduler is resumed.
+				
+				method Resume     Resumes the paused scheduler.
+				
+				method Destroy    Destroys the scheduler so it can't be used anymore.
+				
+				method QueueTask  Queues a task for automatic execution.
+					param callback  function (task) to be run.
+			
+			Example usage:
+			
+			local scheduler = TaskScheduler:CreateScheduler(60)
+			local totalOperations = 0
+			local paused
+			for i=1,100 do
+				scheduler:QueueTask(function()
+					local partA = Instance.new("Part", workspace)
+					local partB = Instance.new("Part", workspace)
+					plugin:Union({partA, partB}):Destroy()
+					totalOperations = totalOperations + 1
+					print("Times unioned:", totalOperations)
+					if (totalOperations == 50) then
+						scheduler:Pause()
+						paused = true
+					end
+				end)
+			end
+			
+			repeat wait() until paused
+			wait(2)
+			scheduler:Resume()
+		--]]
+		
+		
+		function TaskScheduler:CreateScheduler(targetFps)
+		
+			local scheduler = {}
+			local queue = {}
+			local sleeping = true
+			local paused
+		
+			local updateFrameTableEvent = nil
+		
+			local start = tick()
+			runService.RenderStepped:Wait()
+		
+			local function UpdateFrameTable()
+				lastIteration = tick()
+				for i = #frameUpdateTable,1,-1 do
+					frameUpdateTable[i + 1] = ((frameUpdateTable[i] >= (lastIteration - 1)) and frameUpdateTable[i] or nil)
+				end
+				frameUpdateTable[1] = lastIteration
+			end
+		
+			local function Loop()
+				updateFrameTableEvent = runService.RenderStepped:Connect(UpdateFrameTable)
+				while (true) do
+					if (sleeping) then break end
+					local fps = (((tick() - start) >= 1 and #frameUpdateTable) or (#frameUpdateTable / (tick() - start)))
+					if (fps >= targetFps and (tick() - frameUpdateTable[1]) < (1 / targetFps)) then
+						if (#queue > 0) then
+							queue[1]()
+							table.remove(queue, 1)
+						else
+							sleeping = true
+							break
+						end
+					else
+						runService.RenderStepped:Wait()
+					end
+				end
+				updateFrameTableEvent:Disconnect()
+				updateFrameTableEvent = nil
+			end
+		
+			function scheduler.Pause(_s)
+				paused = true
+				sleeping = true
+			end
+		
+			function scheduler.Resume(_s)
+				if (paused) then
+					paused = false
+					sleeping = false
+					Loop()
+				end
+			end
+		
+			function scheduler.Destroy(_s)
+				scheduler:Pause()
+				for i in pairs(scheduler) do
+					scheduler[i] = nil
+				end
+				setmetatable(scheduler, {
+					__index = function()
+						error("Attempt to use destroyed scheduler")
+					end;
+					__newindex = function()
+						error("Attempt to use destroyed scheduler")
+					end;
+				})
+			end
+		
+			function scheduler.QueueTask(_s, callback)
+				queue[#queue + 1] = callback
+				if (sleeping and not paused) then
+					sleeping = false
+					Loop()
+				end
+			end
+		
+			return scheduler
+		
+		end
+		
+		
+		return TaskScheduler
+	end
+	fake_module_scripts[script] = module_script
+end
+do -- MidiPlayer.Song
+	local script = Instance.new('ModuleScript', MidiPlayer)
+	script.Name = "Song"
+	local function module_script()
+		-- Song
+		-- 0866
+		-- November 03, 2020
+		
+		
+		
+		local Song = {}
+		Song.__index = Song
+		
+		local MIDI = require(script.Parent.MIDI)
+		local Input = require(script.Parent.Input)
+		
+		local RunService = game:GetService("RunService")
+		
+		
+		local function GetTimeLength(score)
+			local length = 0
+			for i, track in ipairs(score) do
+				if (i == 1) then continue end
+				length = math.max(length, track[#track][2])
+			end
+			return length
+		end
+		
+		
+		function Song.new(file)
+		
+			local score = MIDI.midi2score(readfile(file))
+		
+			local fullname = file:match("([^/^\\]+)$")
+			local name = fullname:match("^([^%.]+)") or ""
+		
+			local self = setmetatable({
+		
+				Name = name;
+				Path = file;
+				TimePosition = 0;
+				TimeLength = 0;
+				Timebase = score[1];
+				IsPlaying = false;
+		
+				_score = score;
+				_usPerBeat = 0;
+				_lastTimePosition = 0;
+				_length = GetTimeLength(score);
+				_eventStatus = {};
+				_updateConnection = nil;
+		
+			}, Song)
+		
+			self.TimeLength = (self._length / self.Timebase)
+		
+			return self
+		
+		end
+		
+		
+		function Song:Update(timePosition, lastTimePosition)
+			for _,track in next, self._score, 1 do
+				for _,event in ipairs(track) do
+					local eventTime = (event[2] / self.Timebase)
+					if (timePosition >= eventTime) then
+						if (lastTimePosition <= eventTime) then
+							self:_parse(event)
+						end
+					end
+				end
+			end
+		end
+		
+		
+		function Song:Step(deltaTime)
+			self._lastTimePosition = self.TimePosition
+			if (self._usPerBeat ~= 0) then
+				self.TimePosition += (deltaTime / (self._usPerBeat / 1000000))
+			else
+				self.TimePosition += deltaTime
+			end
+		end
+		
+		
+		function Song:JumpTo(timePosition)
+			self.TimePosition = timePosition
+			self._lastTimePosition = timePosition
+		end
+		
+		
+		function Song:Play()
+			self._updateConnection = RunService.RenderStepped:Connect(function(dt)
+				self:Update(self.TimePosition, self._lastTimePosition)
+				self:Step(dt)
+				if (self.TimePosition >= self.TimeLength) then
+					self:Pause()
+				end
+			end)
+			self:Update(0, 0)
+			self.IsPlaying = true
+		end
+		
+		
+		function Song:Stop()
+			if (self._updateConnection) then
+				self._updateConnection:Disconnect()
+				self._updateConnection = nil
+				self.IsPlaying = false
+			end
+			self._lastTimePosition = 0
+		end
+		
+		
+		function Song:Pause()
+			if (self._updateConnection) then
+				self._updateConnection:Disconnect()
+				self._updateConnection = nil
+				self.IsPlaying = false
+			end
+		end
+		
+		
+		function Song:_parse(event)
+		    --[[
+		
+		        Event:
+		            Event name  [String]
+		            Start time  [Number]
+		            ...
+		
+		        Note:
+		            Event name  [String]
+		            Start time  [Number]
+		            Duration    [Number]
+		            Channel     [Number]
+		            Pitch       [Number]
+		            Velocity    [Number]
+		
+		    ]]
+			local eventName = event[1]
+		
+			if (eventName == "set_tempo") then
+				self._usPerBeat = event[3]
+			elseif (eventName == "song_position") then
+				self.TimePosition = (event[3] / self.Timebase)
+				print("set timeposition timebase", self.Timebase)
+			elseif (eventName == "note") then
+				Input.Hold(event[5], event[3] / self.Timebase)
+			end
+		end
+		
+		
+		function Song.FromTitle(midiTitle)
+			return Song.new("midi/" .. midiTitle .. ".mid")
+		end
+		
+		
+		Song.Destroy = Song.Stop
+		
+		return Song
+	end
+	fake_module_scripts[script] = module_script
+end
 
 
 -- Scripts:
 
-local function SLHSSQ_fake_script() -- MidiPlayer.Song 
+local function BWQF_fake_script() -- MidiPlayer.Init 
 	local script = Instance.new('LocalScript', MidiPlayer)
 	local req = require
 	local require = function(obj)
@@ -5688,401 +6072,18 @@ local function SLHSSQ_fake_script() -- MidiPlayer.Song
 		return req(obj)
 	end
 
-	-- Song
+	-- Main
 	-- 0866
-	-- November 03, 2020
+	-- October 31, 2020
 	
 	
 	
-	local Song = {}
-	Song.__index = Song
+	local App = require(script.Parent.Components.App)
 	
-	local MIDI = require(script.Parent.MIDI)
-	local Input = require(script.Parent.Input)
-	
-	local RunService = game:GetService("RunService")
-	
-	
-	local function GetTimeLength(score)
-		local length = 0
-		for i, track in ipairs(score) do
-			if (i == 1) then continue end
-			length = math.max(length, track[#track][2])
-		end
-		return length
+	if (not isfolder("midi")) then
+		makefolder("midi")
 	end
 	
-	
-	function Song.new(file)
-	
-		local score = MIDI.midi2score(readfile(file))
-	
-		local fullname = file:match("([^/^\\]+)$")
-		local name = fullname:match("^([^%.]+)") or ""
-	
-		local self = setmetatable({
-	
-			Name = name;
-			Path = file;
-			TimePosition = 0;
-			TimeLength = 0;
-			Timebase = score[1];
-			IsPlaying = false;
-	
-			_score = score;
-			_usPerBeat = 0;
-			_lastTimePosition = 0;
-			_length = GetTimeLength(score);
-			_eventStatus = {};
-			_updateConnection = nil;
-	
-		}, Song)
-	
-		self.TimeLength = (self._length / self.Timebase)
-	
-		return self
-	
-	end
-	
-	
-	function Song:Update(timePosition, lastTimePosition)
-		for _,track in next, self._score, 1 do
-			for _,event in ipairs(track) do
-				local eventTime = (event[2] / self.Timebase)
-				if (timePosition >= eventTime) then
-					if (lastTimePosition <= eventTime) then
-						self:_parse(event)
-					end
-				end
-			end
-		end
-	end
-	
-	
-	function Song:Step(deltaTime)
-		self._lastTimePosition = self.TimePosition
-		if (self._usPerBeat ~= 0) then
-			self.TimePosition += (deltaTime / (self._usPerBeat / 1000000))
-		else
-			self.TimePosition += deltaTime
-		end
-	end
-	
-	
-	function Song:JumpTo(timePosition)
-		self.TimePosition = timePosition
-		self._lastTimePosition = timePosition
-	end
-	
-	
-	function Song:Play()
-		self._updateConnection = RunService.RenderStepped:Connect(function(dt)
-			self:Update(self.TimePosition, self._lastTimePosition)
-			self:Step(dt)
-			if (self.TimePosition >= self.TimeLength) then
-				self:Pause()
-			end
-		end)
-		self:Update(0, 0)
-		self.IsPlaying = true
-	end
-	
-	
-	function Song:Stop()
-		if (self._updateConnection) then
-			self._updateConnection:Disconnect()
-			self._updateConnection = nil
-			self.IsPlaying = false
-		end
-		self._lastTimePosition = 0
-	end
-	
-	
-	function Song:Pause()
-		if (self._updateConnection) then
-			self._updateConnection:Disconnect()
-			self._updateConnection = nil
-			self.IsPlaying = false
-		end
-	end
-	
-	
-	function Song:_parse(event)
-	    --[[
-	
-	        Event:
-	            Event name  [String]
-	            Start time  [Number]
-	            ...
-	
-	        Note:
-	            Event name  [String]
-	            Start time  [Number]
-	            Duration    [Number]
-	            Channel     [Number]
-	            Pitch       [Number]
-	            Velocity    [Number]
-	
-	    ]]
-		local eventName = event[1]
-	
-		if (eventName == "set_tempo") then
-			self._usPerBeat = event[3]
-		elseif (eventName == "song_position") then
-			self.TimePosition = (event[3] / self.Timebase)
-			print("set timeposition timebase", self.Timebase)
-		elseif (eventName == "note") then
-			Input.Hold(event[5], event[3] / self.Timebase)
-		end
-	end
-	
-	
-	function Song.FromTitle(midiTitle)
-		return Song.new("midi/" .. midiTitle .. ".mid")
-	end
-	
-	
-	Song.Destroy = Song.Stop
-	
-	return Song
+	App:Init()
 end
-coroutine.wrap(SLHSSQ_fake_script)()
-local function ECIF_fake_script() -- MidiPlayer.TaskScheduler 
-	local script = Instance.new('LocalScript', MidiPlayer)
-	local req = require
-	local require = function(obj)
-		local fake = fake_module_scripts[obj]
-		if fake then
-			return fake()
-		end
-		return req(obj)
-	end
-
-	-- Author: EchoReaper
-	-- Roblox Link: https://www.roblox.com/Task-Scheduler-item?id=348019935
-	-- Publically released January 25, 2016
-	
-	-- Changes made from EchoReaper's version:
-	-- GetCurrentFPS() method removed
-	-- FPS is only tracked when the 'Loop' function is running for performance reasons
-	-- Styled code in consistency with the rest of the AeroGameFramework codebase
-	
-	--[[
-		
-		local scheduler = TaskScheduler:CreateScheduler(targetedMinimumFPS)
-		
-		scheduler:QueueTask(function)
-		scheduler:Pause()
-		scheduler:Resume()
-		scheduler:Destroy()
-		
-	--]]
-	
-	
-	
-	
-	local TaskScheduler = {}
-	
-	local lastIteration
-	local frameUpdateTable = {}
-	
-	local runService = game:GetService("RunService")
-	
-	--[[
-		param targetFps  Task scheduler won't run a task if it'd make the FPS drop below this amount
-						 (WARNING) this only holds true if it is used properly. If you try to complete 10 union operations
-						 at once in a single task then of course your FPS is going to drop -- queue the union operations
-						 up one at a time so the task scheduler can do its job.
-						
-						
-		returns scheduler
-			method Pause      Pauses the scheduler so it won't run tasks. Tasks may still be added while the scheduler is
-							  paused. They just won't be touched until it's resumed. Performance efficient -- disables
-							  execution loop entirely until scheduler is resumed.
-			
-			method Resume     Resumes the paused scheduler.
-			
-			method Destroy    Destroys the scheduler so it can't be used anymore.
-			
-			method QueueTask  Queues a task for automatic execution.
-				param callback  function (task) to be run.
-		
-		Example usage:
-		
-		local scheduler = TaskScheduler:CreateScheduler(60)
-		local totalOperations = 0
-		local paused
-		for i=1,100 do
-			scheduler:QueueTask(function()
-				local partA = Instance.new("Part", workspace)
-				local partB = Instance.new("Part", workspace)
-				plugin:Union({partA, partB}):Destroy()
-				totalOperations = totalOperations + 1
-				print("Times unioned:", totalOperations)
-				if (totalOperations == 50) then
-					scheduler:Pause()
-					paused = true
-				end
-			end)
-		end
-		
-		repeat wait() until paused
-		wait(2)
-		scheduler:Resume()
-	--]]
-	
-	
-	function TaskScheduler:CreateScheduler(targetFps)
-	
-		local scheduler = {}
-		local queue = {}
-		local sleeping = true
-		local paused
-	
-		local updateFrameTableEvent = nil
-	
-		local start = tick()
-		runService.RenderStepped:Wait()
-	
-		local function UpdateFrameTable()
-			lastIteration = tick()
-			for i = #frameUpdateTable,1,-1 do
-				frameUpdateTable[i + 1] = ((frameUpdateTable[i] >= (lastIteration - 1)) and frameUpdateTable[i] or nil)
-			end
-			frameUpdateTable[1] = lastIteration
-		end
-	
-		local function Loop()
-			updateFrameTableEvent = runService.RenderStepped:Connect(UpdateFrameTable)
-			while (true) do
-				if (sleeping) then break end
-				local fps = (((tick() - start) >= 1 and #frameUpdateTable) or (#frameUpdateTable / (tick() - start)))
-				if (fps >= targetFps and (tick() - frameUpdateTable[1]) < (1 / targetFps)) then
-					if (#queue > 0) then
-						queue[1]()
-						table.remove(queue, 1)
-					else
-						sleeping = true
-						break
-					end
-				else
-					runService.RenderStepped:Wait()
-				end
-			end
-			updateFrameTableEvent:Disconnect()
-			updateFrameTableEvent = nil
-		end
-	
-		function scheduler.Pause(_s)
-			paused = true
-			sleeping = true
-		end
-	
-		function scheduler.Resume(_s)
-			if (paused) then
-				paused = false
-				sleeping = false
-				Loop()
-			end
-		end
-	
-		function scheduler.Destroy(_s)
-			scheduler:Pause()
-			for i in pairs(scheduler) do
-				scheduler[i] = nil
-			end
-			setmetatable(scheduler, {
-				__index = function()
-					error("Attempt to use destroyed scheduler")
-				end;
-				__newindex = function()
-					error("Attempt to use destroyed scheduler")
-				end;
-			})
-		end
-	
-		function scheduler.QueueTask(_s, callback)
-			queue[#queue + 1] = callback
-			if (sleeping and not paused) then
-				sleeping = false
-				Loop()
-			end
-		end
-	
-		return scheduler
-	
-	end
-	
-	
-	return TaskScheduler
-end
-coroutine.wrap(ECIF_fake_script)()
-local function ZQFOY_fake_script() -- MidiPlayer.FastDraggable 
-	local script = Instance.new('LocalScript', MidiPlayer)
-	local req = require
-	local require = function(obj)
-		local fake = fake_module_scripts[obj]
-		if fake then
-			return fake()
-		end
-		return req(obj)
-	end
-
-	-- https://devforum.roblox.com/t/draggable-property-is-hidden-on-gui-objects/107689/5
-	
-	local UserInputService = game:GetService("UserInputService")
-	
-	
-	local function FastDraggable(gui, handle)
-	
-		handle = handle or gui
-	
-		local dragging
-		local dragInput
-		local dragStart
-		local startPos
-	
-		local function update(input)
-			local delta = input.Position - dragStart
-			gui.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
-		end
-	
-		handle.InputBegan:Connect(function(input)
-			if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-				dragging = true
-				dragStart = input.Position
-				startPos = gui.Position
-	
-				input.Changed:Connect(function()
-					if input.UserInputState == Enum.UserInputState.End then
-						dragging = false
-					end
-				end)
-			end
-		end)
-	
-		handle.InputChanged:Connect(function(input)
-			if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
-				dragInput = input
-			end
-		end)
-	
-		UserInputService.InputChanged:Connect(function(input)
-			if input == dragInput and dragging then
-				update(input)
-			end
-		end)
-	
-	end
-	
-	
-	return FastDraggable
-end
-coroutine.wrap(ZQFOY_fake_script)()
-local App = require(game.Players.LocalPlayer.MidiPlayer.Components.App)
-
-if (not isfolder("midi")) then
-	makefolder("midi")
-end
-
-App.Init()
+coroutine.wrap(BWQF_fake_script)()
