@@ -1,6 +1,7 @@
-
--- Initialize Function
 -- Gui to Lua
+-- Version: 3.2
+
+-- Instances:
 
 local MidiPlayer = Instance.new("ScreenGui")
 local Components = Instance.new("Folder")
@@ -6078,31 +6079,10 @@ local function ZQFOY_fake_script() -- MidiPlayer.FastDraggable
 	return FastDraggable
 end
 coroutine.wrap(ZQFOY_fake_script)()
-local function QEDF_fake_script() -- MidiPlayer.Init 
-	local script = Instance.new('LocalScript', MidiPlayer)
-	local req = require
-	local require = function(obj)
-		local fake = fake_module_scripts[obj]
-		if fake then
-			return fake()
-		end
-		return req(obj)
-	end
+local App = require(game.Players.LocalPlayer.MidiPlayer.Components.App)
 
-	-- Main
-	-- 0866
-	-- October 31, 2020
-	
-	-- Modified by br0k3V
-	-- Lua
-	
-	
-	local App = require(script.Components.App)
-	
-	if (not isfolder("midi")) then
-		makefolder("midi")
-	end
-	
-	App:Init()
+if (not isfolder("midi")) then
+	makefolder("midi")
 end
-coroutine.wrap(QEDF_fake_script)()
+
+App:Init()
