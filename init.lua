@@ -6076,6 +6076,8 @@ local function BWQF_fake_script() -- MidiPlayer.Init
 	-- 0866
 	-- October 31, 2020
 	
+	-- Modified by br0k3V
+	-- Lua
 	
 	
 	local App = require(script.Parent.Components.App)
